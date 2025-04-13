@@ -1,6 +1,7 @@
 // lib/presentation/providers/session_provider.dart
 
 import 'package:flutter/foundation.dart';
+import 'package:hermes_app/data/services/firebase_service.dart';
 import '../../domain/models/session.dart';
 import '../../domain/models/user_role.dart';
 import '../../core/utils/session_code_generator.dart';
@@ -49,7 +50,7 @@ class SessionProvider with ChangeNotifier {
   }
 
   // Join a session for audience
-  bool joinSession(String sessionCode) {
+  Future<bool> joinSession(String sessionCode) async {
     print('SessionProvider - joinSession with code: $sessionCode');
 
     if (!SessionCodeGenerator.isValidSessionCode(sessionCode)) {
@@ -57,8 +58,17 @@ class SessionProvider with ChangeNotifier {
       return false;
     }
 
-    // In MVP, we'll just store the session code without validation
-    // In a future phase, we'd validate the code against a backend
+    // Validate against Firebase to check if the session exists
+    final firebaseService =
+        FirebaseService(); // Create temporary instance just for validation
+    final sessionExists = await firebaseService.sessionExists(sessionCode);
+
+    if (!sessionExists) {
+      print('SessionProvider - session does not exist');
+      return false;
+    }
+
+    // Session exists, so we can join it
     _joinedSessionCode = sessionCode;
     _userRole = UserRole.audience;
     notifyListeners();

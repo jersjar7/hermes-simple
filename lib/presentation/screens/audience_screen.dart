@@ -109,7 +109,7 @@ class _AudienceScreenState extends State<AudienceScreen> {
     }
   }
 
-  void onSessionCodeSubmit(BuildContext context, String code) async {
+  Future<void> onSessionCodeSubmit(BuildContext context, String code) async {
     print('AudienceScreen - session code submitted: $code');
 
     // Get providers
@@ -130,8 +130,8 @@ class _AudienceScreenState extends State<AudienceScreen> {
     );
 
     try {
-      // Join session
-      final success = sessionProvider.joinSession(code);
+      // Join session (asynchronous version)
+      final success = await sessionProvider.joinSession(code);
 
       // Close loading dialog
       if (context.mounted) Navigator.of(context).pop();

@@ -3,12 +3,12 @@
 import 'package:flutter/foundation.dart';
 import '../../data/services/translation_service.dart';
 import '../../data/services/tts_service.dart';
-import '../../data/services/websocket_service.dart';
+import '../../data/services/firebase_service.dart';
 
 class TranslationProvider with ChangeNotifier {
   final TranslationService _translationService = TranslationService();
   final TTSService _ttsService = TTSService();
-  final WebSocketService _webSocketService = WebSocketService();
+  final FirebaseService _firebaseService = FirebaseService();
 
   bool _isInitialized = false;
   bool _isTranslating = false;
@@ -75,7 +75,7 @@ class TranslationProvider with ChangeNotifier {
     }
 
     // Set up WebSocket message listener
-    _webSocketService.messageStream.listen((message) {
+    _firebaseService.messageStream.listen((message) {
       _handleWebSocketMessage(message);
     });
 
@@ -116,7 +116,7 @@ class TranslationProvider with ChangeNotifier {
     _error = '';
 
     try {
-      final connected = await _webSocketService.connect(
+      final connected = await _firebaseService.connect(
         sessionCode: sessionCode,
         role: role,
       );
@@ -145,7 +145,7 @@ class TranslationProvider with ChangeNotifier {
   Future<void> disconnect() async {
     print('TranslationProvider - disconnecting');
 
-    await _webSocketService.disconnect();
+    await _firebaseService.disconnect();
     _isConnected = false;
     notifyListeners();
   }
@@ -176,7 +176,7 @@ class TranslationProvider with ChangeNotifier {
 
       // If connected to session, send translation to WebSocket
       if (_isConnected) {
-        await _webSocketService.sendTranslation(
+        await _firebaseService.sendTranslation(
           originalText: text,
           translatedText: translatedText,
           fromLanguage: _speakerLanguage,
@@ -314,7 +314,7 @@ class TranslationProvider with ChangeNotifier {
   void dispose() {
     print('TranslationProvider - dispose called');
     _ttsService.dispose();
-    _webSocketService.dispose();
+    _firebaseService.dispose();
     super.dispose();
   }
 }

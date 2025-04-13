@@ -1,6 +1,7 @@
 // lib/main.dart
 
 import 'dart:ui';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'presentation/providers/speech_provider.dart';
@@ -23,7 +24,13 @@ class LoggingErrorObserver extends NavigatorObserver {
   }
 }
 
-void main() {
+void main() async {
+  // Ensure Flutter is initialized
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
+  await Firebase.initializeApp();
+
   // Catch Flutter framework errors
   FlutterError.onError = (FlutterErrorDetails details) {
     print('Flutter error: ${details.exception}');
