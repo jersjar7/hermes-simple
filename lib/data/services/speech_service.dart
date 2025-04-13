@@ -85,8 +85,8 @@ class SpeechService {
     try {
       print('SpeechService - starting to listen');
 
-      // Simple configuration for initial implementation
-      final success = await _speechToText.listen(
+      // FIX: speech_to_text.listen() returns void, not bool
+      _speechToText.listen(
         onResult: (SpeechRecognitionResult result) {
           final recognizedWords = result.recognizedWords;
           print(
@@ -106,8 +106,9 @@ class SpeechService {
         partialResults: true,
       );
 
-      print('SpeechService - listen method returned: $success');
-      return success;
+      // FIX: Return true if we get here without exceptions
+      print('SpeechService - listening started successfully');
+      return true;
     } catch (e) {
       print('SpeechService - error in startListening: $e');
       return false;

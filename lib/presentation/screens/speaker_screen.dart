@@ -1,11 +1,14 @@
 // lib/presentation/screens/speaker_screen.dart
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/session_provider.dart';
 import '../providers/speech_provider.dart';
 import '../widgets/speech_control_panel.dart';
 import '../../core/constants/app_constants.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class SpeakerScreen extends StatefulWidget {
   const SpeakerScreen({super.key});
@@ -67,23 +70,67 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
   // Initialize session in a separate method
   Future<void> _initializeSession() async {
     print('SpeakerScreen - initializing session');
-    final sessionProvider = Provider.of<SessionProvider>(
-      context,
-      listen: false,
-    );
 
-    if (!sessionProvider.isSessionActive) {
-      print('SpeakerScreen - creating new session');
-      sessionProvider.createSession('en-US');
-    } else {
-      print('SpeakerScreen - session already active');
+    // Use Future.microtask to avoid calling setState during build
+    return Future.microtask(() {
+      final sessionProvider = Provider.of<SessionProvider>(
+        context,
+        listen: false,
+      );
+
+      if (!sessionProvider.isSessionActive) {
+        print('SpeakerScreen - creating new session');
+        sessionProvider.createSession('en-US');
+      } else {
+        print('SpeakerScreen - session already active');
+      }
+    });
+  }
+
+  Future<bool> _requestPermissions() async {
+    print('SpeakerScreen - requesting permissions');
+
+    // Request microphone permission
+    PermissionStatus micStatus = await Permission.microphone.request();
+    if (micStatus != PermissionStatus.granted) {
+      print('SpeakerScreen - microphone permission denied');
+      return false;
     }
+
+    // On iOS, also need speech recognition permission
+    if (Platform.isIOS) {
+      PermissionStatus speechStatus = await Permission.speech.request();
+      if (speechStatus != PermissionStatus.granted) {
+        print('SpeakerScreen - speech recognition permission denied');
+        return false;
+      }
+    }
+
+    print('SpeakerScreen - all permissions granted');
+    return true;
   }
 
   // Initialize speech in a separate method
   Future<void> _initializeSpeech() async {
     print('SpeakerScreen - initializing speech');
+
     try {
+      // First check permissions
+      bool permissionsGranted = await _requestPermissions();
+      if (!permissionsGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Speech recognition requires microphone permission',
+              ),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+
       final speechProvider = Provider.of<SpeechProvider>(
         context,
         listen: false,
