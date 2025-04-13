@@ -1,4 +1,4 @@
-// Update the SpeechProvider class to better handle error states
+// lib/presentation/providers/speech_provider.dart
 
 import 'package:flutter/foundation.dart';
 import '../../data/services/speech_service.dart';
@@ -11,52 +11,14 @@ class SpeechProvider with ChangeNotifier {
   bool _isInitializing = false;
   bool _isInitialized = false;
   String _selectedLanguage = 'en-US'; // Default language
+  String _error = ''; // Added error property
 
-  // Enhanced error handling
-  String _errorMessage = '';
-  bool _hasError = false;
-  DateTime? _errorTimestamp;
-
-  // Getters
   String get recognizedText => _recognizedText;
   bool get isListening => _isListening;
   bool get isInitializing => _isInitializing;
   bool get isInitialized => _isInitialized;
   String get selectedLanguage => _selectedLanguage;
-  String get errorMessage => _errorMessage;
-  bool get hasError => _hasError;
-  DateTime? get errorTimestamp => _errorTimestamp;
-
-  // Clear error after a certain time
-  void _setError(String message) {
-    _errorMessage = message;
-    _hasError = message.isNotEmpty;
-    _errorTimestamp = _hasError ? DateTime.now() : null;
-    notifyListeners();
-
-    // Auto-clear error after 5 seconds
-    if (_hasError) {
-      Future.delayed(const Duration(seconds: 5), () {
-        // Only clear if this is still the same error (by timestamp)
-        if (_errorTimestamp != null &&
-            DateTime.now().difference(_errorTimestamp!).inSeconds < 6) {
-          _errorMessage = '';
-          _hasError = false;
-          _errorTimestamp = null;
-          notifyListeners();
-        }
-      });
-    }
-  }
-
-  // Clear error manually
-  void clearError() {
-    print('SpeechProvider - clearError called');
-    _errorMessage = '';
-    _hasError = false;
-    _errorTimestamp = null;
-    notifyListeners();
-  }
+  String get error => _error; // Added getter for error
 
   // Initialize the speech service with proper error handling
   Future<bool> initialize() async {
@@ -74,7 +36,7 @@ class SpeechProvider with ChangeNotifier {
     }
 
     _isInitializing = true;
-    _setError(''); // Clear any previous errors
+    _error = '';
     notifyListeners();
 
     try {
@@ -84,7 +46,7 @@ class SpeechProvider with ChangeNotifier {
       _isInitializing = false;
 
       if (!initialized) {
-        _setError('Failed to initialize speech recognition');
+        _error = 'Failed to initialize speech recognition';
         print('SpeechProvider - initialization failed');
       } else {
         print('SpeechProvider - initialization successful');
@@ -96,7 +58,8 @@ class SpeechProvider with ChangeNotifier {
       print('SpeechProvider - initialization error: $e');
       _isInitialized = false;
       _isInitializing = false;
-      _setError('Error initializing speech: $e');
+      _error = 'Error initializing speech: $e';
+      notifyListeners();
       return false;
     }
   }
@@ -123,14 +86,15 @@ class SpeechProvider with ChangeNotifier {
       print('SpeechProvider - not initialized, initializing first');
       final initialized = await initialize();
       if (!initialized) {
-        _setError('Could not initialize speech recognition');
+        _error = 'Could not initialize speech recognition';
+        notifyListeners();
         print('SpeechProvider - initialization failed, cannot start listening');
         return;
       }
     }
 
     _isListening = true;
-    _setError(''); // Clear any previous errors
+    _error = '';
     notifyListeners();
     print('SpeechProvider - listening state updated, starting recognition');
 
@@ -146,13 +110,15 @@ class SpeechProvider with ChangeNotifier {
 
       if (!success) {
         _isListening = false;
-        _setError('Failed to start speech recognition');
+        _error = 'Failed to start speech recognition';
+        notifyListeners();
         print('SpeechProvider - failed to start listening');
       }
     } catch (e) {
       print('SpeechProvider - error in startListening: $e');
       _isListening = false;
-      _setError('Error: $e');
+      _error = 'Error: $e';
+      notifyListeners();
     }
   }
 
@@ -170,7 +136,7 @@ class SpeechProvider with ChangeNotifier {
       _isListening = false;
 
       if (!success) {
-        _setError('Failed to stop speech recognition');
+        _error = 'Failed to stop speech recognition';
         print('SpeechProvider - failed to stop listening');
       } else {
         print('SpeechProvider - listening stopped successfully');
@@ -180,7 +146,8 @@ class SpeechProvider with ChangeNotifier {
     } catch (e) {
       print('SpeechProvider - error in stopListening: $e');
       _isListening = false;
-      _setError('Error: $e');
+      _error = 'Error: $e';
+      notifyListeners();
     }
   }
 
@@ -194,12 +161,14 @@ class SpeechProvider with ChangeNotifier {
       }
 
       _isListening = false;
-      _setError('');
+      _error = '';
+      notifyListeners();
       print('SpeechProvider - recognition reset');
     } catch (e) {
       print('SpeechProvider - error in resetRecognition: $e');
       _isListening = false;
-      _setError('Error: $e');
+      _error = 'Error: $e';
+      notifyListeners();
     }
   }
 
@@ -207,7 +176,7 @@ class SpeechProvider with ChangeNotifier {
   void clearText() {
     print('SpeechProvider - clearText called');
     _recognizedText = '';
-    _setError('');
+    _error = '';
     notifyListeners();
   }
 

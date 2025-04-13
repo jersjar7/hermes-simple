@@ -3,11 +3,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:hermes_app/presentation/widgets/error_message_widget.dart';
 import 'package:provider/provider.dart';
 import '../providers/session_provider.dart';
 import '../providers/speech_provider.dart';
-import '../widgets/speech_control_panel.dart';
+import '../providers/translation_provider.dart';
 import '../../core/constants/app_constants.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -36,86 +35,54 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
   };
 
   String _selectedLanguage = 'English (US)';
+  String _selectedAudienceLanguage =
+      'Spanish'; // Default different language for demo
   bool _isInitialized = false;
   bool _isLoading = true;
+  String _translatedPreview = ''; // Preview of translation
 
   @override
   void initState() {
     super.initState();
     print('SpeakerScreen - initState called');
 
-    // Initialize with loading state
-    _isLoading = true;
-    _isInitialized = false;
+    // Always start with loading state
+    setState(() {
+      _isLoading = true;
+    });
 
-    // Use a single initialization flow with better state management
-    _initializeApp();
+    // Use separate microtasks for initialization to prevent UI freezing
+    _initializeAll();
   }
 
-  Future<void> _initializeApp() async {
-    print('SpeakerScreen - starting initialization sequence');
+  // Initialize everything
+  Future<void> _initializeAll() async {
+    print('SpeakerScreen - initializing all services');
 
     try {
-      // Step 1: Request permissions first
-      final permissionsGranted = await _requestPermissions();
-      if (!permissionsGranted) {
-        print('SpeakerScreen - permissions denied, stopping initialization');
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            // We won't mark as initialized because permissions are missing
-          });
-        }
-        return;
-      }
-
-      // Step 2: Initialize session (always succeeds in current implementation)
+      // First handle session creation
       await _initializeSession();
 
-      // Step 3: Initialize speech recognition
-      final speechProvider = Provider.of<SpeechProvider>(
-        context,
-        listen: false,
-      );
-      final speechInitialized = await speechProvider.initialize();
+      // Then initialize speech recognition
+      await _initializeSpeech();
 
+      // Finally, initialize translation
+      await _initializeTranslation();
+
+      // Update UI state when all initialization is complete
       if (mounted) {
         setState(() {
-          _isInitialized = speechInitialized;
+          _isInitialized = true;
           _isLoading = false;
         });
-
-        print(
-          'SpeakerScreen - initialization complete: ${_isInitialized ? 'success' : 'failed'}',
-        );
-
-        // Show success/failure message if needed
-        if (!_isInitialized) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Speech recognition initialization failed. '
-                'Some features may not work.',
-              ),
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
+        print('SpeakerScreen - completed all initialization');
       }
     } catch (e) {
-      print('SpeakerScreen - error during initialization: $e');
+      print('SpeakerScreen - initialization error: $e');
       if (mounted) {
         setState(() {
-          _isInitialized = false;
           _isLoading = false;
         });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error during initialization: $e'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
       }
     }
   }
@@ -133,7 +100,9 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
 
       if (!sessionProvider.isSessionActive) {
         print('SpeakerScreen - creating new session');
-        sessionProvider.createSession('en-US');
+        sessionProvider.createSession(
+          _languageCodes[_selectedLanguage] ?? 'en-US',
+        );
       } else {
         print('SpeakerScreen - session already active');
       }
@@ -143,103 +112,152 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
   Future<bool> _requestPermissions() async {
     print('SpeakerScreen - requesting permissions');
 
-    // Check if permissions are already granted
-    bool micGranted = await Permission.microphone.isGranted;
-    bool speechGranted = true;
-    if (Platform.isIOS) {
-      speechGranted = await Permission.speech.isGranted;
-    }
-
-    if (micGranted && speechGranted) {
-      print('SpeakerScreen - permissions already granted');
-      return true;
-    }
-
-    // Request microphone permission if not granted
-    if (!micGranted) {
-      PermissionStatus micStatus = await Permission.microphone.request();
-      if (micStatus != PermissionStatus.granted) {
-        print('SpeakerScreen - microphone permission denied');
-
-        // Show persistent permission request explanation
-        if (mounted) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: const Text('Microphone Permission Required'),
-                content: const Text(
-                  'Hermes needs microphone access to convert your speech to text. '
-                  'Please grant this permission in your device settings.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      openAppSettings();
-                    },
-                    child: const Text('Open Settings'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop(); // Return to home screen
-                    },
-                    child: const Text('Cancel'),
-                  ),
-                ],
-              );
-            },
-          );
-        }
-        return false;
-      }
+    // Request microphone permission
+    PermissionStatus micStatus = await Permission.microphone.request();
+    if (micStatus != PermissionStatus.granted) {
+      print('SpeakerScreen - microphone permission denied');
+      return false;
     }
 
     // On iOS, also need speech recognition permission
-    if (Platform.isIOS && !speechGranted) {
+    if (Platform.isIOS) {
       PermissionStatus speechStatus = await Permission.speech.request();
       if (speechStatus != PermissionStatus.granted) {
         print('SpeakerScreen - speech recognition permission denied');
-
-        if (mounted) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: const Text('Speech Recognition Permission Required'),
-                content: const Text(
-                  'Hermes needs speech recognition permission to convert your speech to text. '
-                  'Please grant this permission in your device settings.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      openAppSettings();
-                    },
-                    child: const Text('Open Settings'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop(); // Return to home screen
-                    },
-                    child: const Text('Cancel'),
-                  ),
-                ],
-              );
-            },
-          );
-        }
         return false;
       }
     }
 
     print('SpeakerScreen - all permissions granted');
     return true;
+  }
+
+  // Initialize speech in a separate method
+  Future<void> _initializeSpeech() async {
+    print('SpeakerScreen - initializing speech');
+
+    try {
+      // First check permissions
+      bool permissionsGranted = await _requestPermissions();
+      if (!permissionsGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Speech recognition requires microphone permission',
+              ),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+
+      final speechProvider = Provider.of<SpeechProvider>(
+        context,
+        listen: false,
+      );
+
+      // Initialize speech recognition and handle result
+      final initialized = await speechProvider.initialize();
+      if (!initialized) {
+        print('SpeakerScreen - speech initialization failed');
+
+        // Show a snackbar if initialization fails but allow the user to continue
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Speech recognition initialization failed. Some features may not work.',
+              ),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      } else {
+        print('SpeakerScreen - speech initialization successful');
+      }
+    } catch (e) {
+      print('SpeakerScreen - error initializing speech: $e');
+
+      // Show error but allow the user to continue
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error initializing speech: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  // Initialize translation in a separate method
+  Future<void> _initializeTranslation() async {
+    print('SpeakerScreen - initializing translation');
+
+    try {
+      final translationProvider = Provider.of<TranslationProvider>(
+        context,
+        listen: false,
+      );
+
+      // Initialize translation services
+      final initialized = await translationProvider.initialize();
+      if (!initialized) {
+        print('SpeakerScreen - translation initialization failed');
+
+        // Show a snackbar if initialization fails but allow the user to continue
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Translation services initialization failed: ${translationProvider.error}',
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      } else {
+        print('SpeakerScreen - translation initialization successful');
+
+        // Set initial languages
+        translationProvider.setSpeakerLanguage(
+          _languageCodes[_selectedLanguage] ?? 'en-US',
+        );
+        translationProvider.setAudienceLanguage(
+          _languageCodes[_selectedAudienceLanguage] ?? 'es-ES',
+        );
+
+        // Connect to WebSocket session
+        final sessionProvider = Provider.of<SessionProvider>(
+          context,
+          listen: false,
+        );
+        final sessionCode = sessionProvider.currentSession?.sessionCode;
+        if (sessionCode != null) {
+          print(
+            'SpeakerScreen - connecting to WebSocket session: $sessionCode',
+          );
+          translationProvider.connectToSession(
+            sessionCode: sessionCode,
+            role: 'speaker',
+          );
+        }
+      }
+    } catch (e) {
+      print('SpeakerScreen - error initializing translation: $e');
+
+      // Show error but allow the user to continue
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error initializing translation: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -249,6 +267,7 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
     );
     final sessionProvider = Provider.of<SessionProvider>(context);
     final speechProvider = Provider.of<SpeechProvider>(context);
+    final translationProvider = Provider.of<TranslationProvider>(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -263,6 +282,8 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
               if (speechProvider.isListening) {
                 speechProvider.stopListening();
               }
+              // Disconnect from WebSocket
+              translationProvider.disconnect();
               sessionProvider.endSession();
               Navigator.pop(context);
             },
@@ -279,7 +300,7 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
                     children: [
                       CircularProgressIndicator(),
                       SizedBox(height: 16),
-                      Text('Initializing speech recognition...'),
+                      Text('Initializing services...'),
                     ],
                   ),
                 )
@@ -313,12 +334,34 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              const Text(
-                                'Share this code with your audience',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey,
-                                ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 12,
+                                    height: 12,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color:
+                                          translationProvider.isConnected
+                                              ? Colors.green
+                                              : Colors.red,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    translationProvider.isConnected
+                                        ? 'Session Active'
+                                        : 'Session Inactive',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color:
+                                          translationProvider.isConnected
+                                              ? Colors.green
+                                              : Colors.red,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -327,158 +370,560 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
 
                       const SizedBox(height: 20),
 
-                      // Language selection
-                      DropdownButtonFormField<String>(
-                        decoration: const InputDecoration(
-                          labelText: 'Your Language',
-                          border: OutlineInputBorder(),
-                        ),
-                        value: _selectedLanguage,
-                        items:
-                            _languages.map((language) {
-                              return DropdownMenuItem(
-                                value: language,
-                                child: Text(language),
-                              );
-                            }).toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() {
-                              _selectedLanguage = value;
-                            });
+                      // Language selections in a row
+                      Row(
+                        children: [
+                          // Speaker language
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(
+                                labelText: 'Your Language',
+                                border: OutlineInputBorder(),
+                              ),
+                              value: _selectedLanguage,
+                              items:
+                                  _languages.map((language) {
+                                    return DropdownMenuItem(
+                                      value: language,
+                                      child: Text(language),
+                                    );
+                                  }).toList(),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() {
+                                    _selectedLanguage = value;
+                                  });
 
-                            print('SpeakerScreen - language changed to $value');
-                            final languageCode =
-                                _languageCodes[value] ?? 'en-US';
-                            speechProvider.setLanguage(languageCode);
-                          }
-                        },
+                                  print(
+                                    'SpeakerScreen - language changed to $value',
+                                  );
+                                  final languageCode =
+                                      _languageCodes[value] ?? 'en-US';
+                                  speechProvider.setLanguage(languageCode);
+                                  translationProvider.setSpeakerLanguage(
+                                    languageCode,
+                                  );
+
+                                  // If we have text, update the translation preview
+                                  if (speechProvider
+                                      .recognizedText
+                                      .isNotEmpty) {
+                                    _updateTranslationPreview(
+                                      speechProvider.recognizedText,
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                          ),
+
+                          const SizedBox(width: 16),
+
+                          // Audience language
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(
+                                labelText: 'Audience Language',
+                                border: OutlineInputBorder(),
+                              ),
+                              value: _selectedAudienceLanguage,
+                              items:
+                                  _languages.map((language) {
+                                    return DropdownMenuItem(
+                                      value: language,
+                                      child: Text(language),
+                                    );
+                                  }).toList(),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() {
+                                    _selectedAudienceLanguage = value;
+                                  });
+
+                                  print(
+                                    'SpeakerScreen - audience language changed to $value',
+                                  );
+                                  final languageCode =
+                                      _languageCodes[value] ?? 'en-US';
+                                  translationProvider.setAudienceLanguage(
+                                    languageCode,
+                                  );
+
+                                  // If we have text, update the translation preview
+                                  if (speechProvider
+                                      .recognizedText
+                                      .isNotEmpty) {
+                                    _updateTranslationPreview(
+                                      speechProvider.recognizedText,
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                          ),
+                        ],
                       ),
 
                       const SizedBox(height: 20),
 
-                      // Speech status indicator
-                      if (speechProvider.isInitializing)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Text(
-                              'Initializing speech recognition...',
-                              style: TextStyle(
-                                color: Colors.blue,
-                                fontStyle: FontStyle.italic,
+                      // Status indicators row
+                      Row(
+                        children: [
+                          // Speech status
+                          if (speechProvider.isInitializing ||
+                              speechProvider.isListening)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: Chip(
+                                backgroundColor: Colors.blue.shade100,
+                                label: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.blue.shade800,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      speechProvider.isInitializing
+                                          ? 'Initializing...'
+                                          : 'Listening...',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.blue.shade800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                          // Translation status
+                          if (translationProvider.isTranslating)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: Chip(
+                                backgroundColor: Colors.purple.shade100,
+                                label: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.purple.shade800,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Translating...',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.purple.shade800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                          // TTS status
+                          if (translationProvider.isSpeaking)
+                            Chip(
+                              backgroundColor: Colors.green.shade100,
+                              label: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.green.shade800,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Speaking...',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green.shade800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+
+                      // Error display if any
+                      if (speechProvider.error.isNotEmpty ||
+                          translationProvider.error.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          margin: const EdgeInsets.only(top: 8, bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade100,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (speechProvider.error.isNotEmpty)
+                                Text(
+                                  'Speech Error: ${speechProvider.error}',
+                                  style: TextStyle(color: Colors.red.shade800),
+                                ),
+                              if (translationProvider.error.isNotEmpty)
+                                Text(
+                                  'Translation Error: ${translationProvider.error}',
+                                  style: TextStyle(color: Colors.red.shade800),
+                                ),
+                            ],
+                          ),
+                        ),
+
+                      // Recognized text and translation display
+                      Expanded(
+                        child: Row(
+                          children: [
+                            // Original text
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Original ($_selectedLanguage)',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        if (speechProvider.isListening)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue.shade100,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                SizedBox(
+                                                  width: 8,
+                                                  height: 8,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color:
+                                                            Colors
+                                                                .blue
+                                                                .shade800,
+                                                      ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Listening',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: Colors.blue.shade800,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Expanded(
+                                      child: SingleChildScrollView(
+                                        child: Text(
+                                          speechProvider.recognizedText.isEmpty
+                                              ? 'Your speech will appear here...'
+                                              : speechProvider.recognizedText,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            color:
+                                                speechProvider
+                                                        .recognizedText
+                                                        .isEmpty
+                                                    ? Colors.grey
+                                                    : Colors.black,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(width: 16),
+
+                            // Translated text (preview only for speaker)
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey),
+                                  borderRadius: BorderRadius.circular(8),
+                                  color: Colors.grey.shade50,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Translation ($_selectedAudienceLanguage)',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        if (translationProvider.isTranslating)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.purple.shade100,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                SizedBox(
+                                                  width: 8,
+                                                  height: 8,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color:
+                                                            Colors
+                                                                .purple
+                                                                .shade800,
+                                                      ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Translating',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color:
+                                                        Colors.purple.shade800,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Expanded(
+                                      child: SingleChildScrollView(
+                                        child: Text(
+                                          _translatedPreview.isEmpty
+                                              ? 'Translation will appear here...'
+                                              : _translatedPreview,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            color:
+                                                _translatedPreview.isEmpty
+                                                    ? Colors.grey
+                                                    : Colors.black,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Control buttons
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          // Clear button
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              print('SpeakerScreen - clear text pressed');
+                              speechProvider.clearText();
+                              setState(() {
+                                _translatedPreview = '';
+                              });
+                            },
+                            icon: const Icon(Icons.clear),
+                            label: const Text('Clear'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.grey,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+
+                          // Microphone button
+                          FloatingActionButton(
+                            onPressed:
+                                speechProvider.isListening
+                                    ? () async {
+                                      print(
+                                        'SpeakerScreen - stop listening pressed',
+                                      );
+                                      await speechProvider.stopListening();
+
+                                      // Auto-translate when speech ends
+                                      if (speechProvider
+                                          .recognizedText
+                                          .isNotEmpty) {
+                                        _updateTranslationPreview(
+                                          speechProvider.recognizedText,
+                                        );
+                                      }
+                                    }
+                                    : () {
+                                      print(
+                                        'SpeakerScreen - start listening pressed',
+                                      );
+                                      speechProvider.startListening();
+                                    },
+                            backgroundColor:
+                                speechProvider.isListening
+                                    ? Colors.red
+                                    : Colors.blue,
+                            child: Icon(
+                              speechProvider.isListening
+                                  ? Icons.stop
+                                  : Icons.mic,
+                              size: 32,
+                            ),
+                          ),
+
+                          // Send button - now enabled
+                          ElevatedButton.icon(
+                            onPressed:
+                                speechProvider.recognizedText.isEmpty ||
+                                        translationProvider.isTranslating
+                                    ? null // Disabled if no text or already translating
+                                    : () async {
+                                      print(
+                                        'SpeakerScreen - send translation pressed',
+                                      );
+                                      if (speechProvider
+                                          .recognizedText
+                                          .isNotEmpty) {
+                                        // Use the translation provider to process the text
+                                        // this will translate and send via WebSocket
+                                        await translationProvider.translateText(
+                                          speechProvider.recognizedText,
+                                        );
+
+                                        // Show a success indicator
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Translation sent to audience',
+                                              ),
+                                              backgroundColor: Colors.green,
+                                              duration: Duration(seconds: 2),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                            icon: const Icon(Icons.send),
+                            label: const Text('Send'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: Colors.grey.withOpacity(
+                                0.3,
+                              ),
+                              disabledForegroundColor: Colors.grey.withOpacity(
+                                0.7,
                               ),
                             ),
                           ),
-                        ),
-
-                      // Error display with improved widget
-                      if (speechProvider.hasError)
-                        ErrorMessageWidget(
-                          errorMessage: speechProvider.errorMessage,
-                          onDismiss: () {
-                            speechProvider.clearError();
-                          },
-                          onRetry:
-                              speechProvider.isInitialized
-                                  ? null
-                                  : () {
-                                    setState(() {
-                                      _isLoading = true;
-                                    });
-                                    speechProvider.initialize().then((_) {
-                                      if (mounted) {
-                                        setState(() {
-                                          _isLoading = false;
-                                        });
-                                      }
-                                    });
-                                  },
-                        ),
-
-                      // Recognized text display
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Stack(
-                            children: [
-                              // Actual text content
-                              SingleChildScrollView(
-                                child: Text(
-                                  speechProvider.recognizedText.isEmpty
-                                      ? 'Your speech will appear here...'
-                                      : speechProvider.recognizedText,
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    color:
-                                        speechProvider.recognizedText.isEmpty
-                                            ? Colors.grey
-                                            : Colors.black,
-                                  ),
-                                ),
-                              ),
-
-                              // Listening indicator overlay
-                              if (speechProvider.isListening)
-                                Positioned(
-                                  right: 0,
-                                  top: 0,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        SizedBox(
-                                          width: 12,
-                                          height: 12,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        ),
-                                        SizedBox(width: 4),
-                                        Text(
-                                          'Listening...',
-                                          style: TextStyle(fontSize: 12),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // Speech controls
-                      SpeechControlPanel(
-                        isListening: speechProvider.isListening,
-                        onStartListening: () {
-                          print('SpeakerScreen - start listening pressed');
-                          speechProvider.startListening();
-                        },
-                        onStopListening: () {
-                          print('SpeakerScreen - stop listening pressed');
-                          speechProvider.stopListening();
-                        },
-                        onClearText: () {
-                          print('SpeakerScreen - clear text pressed');
-                          speechProvider.clearText();
-                        },
+                        ],
                       ),
                     ],
                   ),
                 ),
       ),
     );
+  }
+
+  // Helper method to update translation preview
+  Future<void> _updateTranslationPreview(String text) async {
+    print('SpeakerScreen - updating translation preview');
+    if (text.isEmpty) return;
+
+    try {
+      final translationProvider = Provider.of<TranslationProvider>(
+        context,
+        listen: false,
+      );
+
+      final translated = await translationProvider.translateText(text);
+
+      // Only update state if still mounted
+      if (mounted) {
+        setState(() {
+          _translatedPreview = translated;
+        });
+      }
+    } catch (e) {
+      print('SpeakerScreen - translation preview error: $e');
+
+      // Show error in UI
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Translation preview error: $e'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    // Ensure any active processes are stopped before disposing
+    print('SpeakerScreen - dispose called');
+    super.dispose();
   }
 }

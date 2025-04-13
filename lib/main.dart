@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'presentation/providers/speech_provider.dart';
 import 'presentation/providers/session_provider.dart';
+import 'presentation/providers/translation_provider.dart'; // New import
 import 'presentation/screens/home_screen.dart';
 
 // Error observer to log errors
@@ -64,6 +65,12 @@ class MyApp extends StatelessWidget {
           create: (_) {
             print('Creating SessionProvider');
             return SessionProvider();
+          },
+        ),
+        ChangeNotifierProvider(
+          create: (_) {
+            print('Creating TranslationProvider');
+            return TranslationProvider();
           },
         ),
       ],
