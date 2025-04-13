@@ -23,9 +23,23 @@ class _AudienceScreenState extends State<AudienceScreen> {
   ];
   String _selectedLanguage = 'English (US)';
   String _translatedText = '';
+  bool _isInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    print('AudienceScreen - initState called');
+
+    Future.microtask(() {
+      setState(() {
+        _isInitialized = true;
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    print('AudienceScreen - build method called, initialized: $_isInitialized');
     final sessionProvider = Provider.of<SessionProvider>(context);
 
     return Scaffold(
@@ -37,10 +51,12 @@ class _AudienceScreenState extends State<AudienceScreen> {
             IconButton(
               icon: const Icon(Icons.exit_to_app),
               onPressed: () {
+                print('AudienceScreen - exit button pressed');
                 sessionProvider.endSession();
                 setState(() {
                   _translatedText = '';
                 });
+                Navigator.pop(context);
               },
             ),
         ],
@@ -68,8 +84,10 @@ class _AudienceScreenState extends State<AudienceScreen> {
                 const SizedBox(height: 30),
                 SessionCodeInput(
                   onSubmit: (code) {
+                    print('AudienceScreen - submitted session code: $code');
                     final success = sessionProvider.joinSession(code);
                     if (!success) {
+                      print('AudienceScreen - invalid session code');
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text(
@@ -78,6 +96,8 @@ class _AudienceScreenState extends State<AudienceScreen> {
                           backgroundColor: Colors.red,
                         ),
                       );
+                    } else {
+                      print('AudienceScreen - successfully joined session');
                     }
                   },
                 ),
@@ -128,6 +148,7 @@ class _AudienceScreenState extends State<AudienceScreen> {
                       }).toList(),
                   onChanged: (value) {
                     if (value != null) {
+                      print('AudienceScreen - language changed to $value');
                       setState(() {
                         _selectedLanguage = value;
                       });

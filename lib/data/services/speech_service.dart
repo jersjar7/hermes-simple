@@ -2,6 +2,8 @@
 
 import 'dart:async';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:speech_to_text/speech_recognition_error.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
 import '../../core/constants/app_constants.dart';
 
 class SpeechService {
@@ -10,14 +12,44 @@ class SpeechService {
 
   // Initialize the speech recognition service
   Future<bool> initialize() async {
-    if (_isInitialized) return true;
+    print('SpeechService - initialize called');
 
-    _isInitialized = await _speechToText.initialize(
-      onError: (error) => print('Speech recognition error: $error'),
-      onStatus: (status) => print('Speech recognition status: $status'),
-    );
+    if (_isInitialized) {
+      print('SpeechService - already initialized');
+      return true;
+    }
 
-    return _isInitialized;
+    try {
+      _isInitialized = await _speechToText.initialize(
+        onError: (SpeechRecognitionError error) {
+          print('SpeechService - recognition error: ${error.errorMsg}');
+        },
+        onStatus: (String status) {
+          print('SpeechService - recognition status: $status');
+        },
+        debugLogging: true, // Enable debug logging
+      );
+
+      print(
+        'SpeechService - initialization completed with result: $_isInitialized',
+      );
+
+      if (_isInitialized) {
+        // Log available languages
+        final languages = await _speechToText.locales();
+        print('SpeechService - available languages: ${languages.length}');
+        for (var locale in languages.take(5)) {
+          // Log just first 5 to avoid too much noise
+          print('SpeechService - locale: ${locale.localeId} - ${locale.name}');
+        }
+      }
+
+      return _isInitialized;
+    } catch (e) {
+      print('SpeechService - initialization error: $e');
+      _isInitialized = false;
+      return false;
+    }
   }
 
   // Check if speech recognition is available
@@ -28,8 +60,15 @@ class SpeechService {
 
   // Get available languages
   Future<List<LocaleName>> getAvailableLanguages() async {
-    if (!_isInitialized) await initialize();
-    return _speechToText.locales();
+    print('SpeechService - getAvailableLanguages called');
+    if (!_isInitialized) {
+      print('SpeechService - not initialized, initializing now');
+      await initialize();
+    }
+
+    final languages = await _speechToText.locales();
+    print('SpeechService - found ${languages.length} languages');
+    return languages;
   }
 
   // Start listening for speech
@@ -37,30 +76,66 @@ class SpeechService {
     required Function(String text) onResult,
     String? selectedLocaleId,
   }) async {
-    if (!_isInitialized) await initialize();
-
-    await _speechToText.listen(
-      onResult: (result) {
-        final recognizedWords = result.recognizedWords;
-        if (recognizedWords.isNotEmpty) {
-          onResult(recognizedWords);
-        }
-      },
-      listenFor: Duration(milliseconds: AppConstants.listeningTimeout),
-      localeId: selectedLocaleId,
-      cancelOnError: false,
-      partialResults: true,
-      listenMode: ListenMode.confirmation,
+    print(
+      'SpeechService - startListening called with locale: $selectedLocaleId',
     );
+
+    if (!_isInitialized) {
+      print('SpeechService - not initialized, initializing now');
+      await initialize();
+    }
+
+    if (!_isInitialized) {
+      print('SpeechService - failed to initialize, cannot start listening');
+      throw Exception('Speech recognition service failed to initialize');
+    }
+
+    try {
+      print('SpeechService - starting to listen');
+      final success = await _speechToText.listen(
+        onResult: (SpeechRecognitionResult result) {
+          final recognizedWords = result.recognizedWords;
+          print(
+            'SpeechService - got result, partial: ${result.finalResult}, words: ${recognizedWords.length}',
+          );
+          if (recognizedWords.isNotEmpty) {
+            onResult(recognizedWords);
+          }
+        },
+        listenFor: Duration(milliseconds: AppConstants.listeningTimeout),
+        localeId: selectedLocaleId,
+        cancelOnError: false,
+        partialResults: true,
+        listenMode: ListenMode.confirmation,
+      );
+
+      print('SpeechService - listen method returned: $success');
+
+      if (!success) {
+        print('SpeechService - failed to start listening');
+        throw Exception('Failed to start speech recognition');
+      }
+    } catch (e) {
+      print('SpeechService - error in startListening: $e');
+      throw Exception('Error starting speech recognition: $e');
+    }
   }
 
   // Stop listening
   Future<void> stopListening() async {
-    await _speechToText.stop();
+    print('SpeechService - stopListening called');
+    try {
+      await _speechToText.stop();
+      print('SpeechService - stopped listening');
+    } catch (e) {
+      print('SpeechService - error in stopListening: $e');
+      throw Exception('Error stopping speech recognition: $e');
+    }
   }
 
   // Dispose resources
   void dispose() {
+    print('SpeechService - dispose called');
     _speechToText.cancel();
   }
 }

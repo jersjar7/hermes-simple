@@ -9,21 +9,41 @@ import 'speaker_screen.dart';
 import 'audience_screen.dart';
 import '../../core/constants/app_constants.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    print('HomeScreen - initState called');
+
+    // Reset session status when returning to home screen
+    Future.microtask(() {
+      final sessionProvider = Provider.of<SessionProvider>(
+        context,
+        listen: false,
+      );
+      if (sessionProvider.isSessionActive) {
+        print(
+          'HomeScreen - session is active, resetting on home screen return',
+        );
+        sessionProvider.endSession();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    print('HomeScreen - build method called');
     final sessionProvider = Provider.of<SessionProvider>(context);
 
-    // Navigate to appropriate screen based on the user role
-    if (sessionProvider.userRole == UserRole.speaker &&
-        sessionProvider.isSessionActive) {
-      return const SpeakerScreen();
-    } else if (sessionProvider.userRole == UserRole.audience &&
-        sessionProvider.isSessionActive) {
-      return const AudienceScreen();
-    }
+    // This navigation logic is now in the role selection card onTap handlers
+    // Instead of automatic navigation based on session state
 
     return Scaffold(
       appBar: AppBar(
@@ -65,6 +85,7 @@ class HomeScreen extends StatelessWidget {
                             'I want to speak and have my speech translated',
                         icon: Icons.mic,
                         onTap: () {
+                          print('HomeScreen - speaker role selected');
                           sessionProvider.setUserRole(UserRole.speaker);
                           Navigator.push(
                             context,
@@ -82,6 +103,7 @@ class HomeScreen extends StatelessWidget {
                         description: 'I want to listen to translated speech',
                         icon: Icons.headset,
                         onTap: () {
+                          print('HomeScreen - audience role selected');
                           sessionProvider.setUserRole(UserRole.audience);
                           Navigator.push(
                             context,

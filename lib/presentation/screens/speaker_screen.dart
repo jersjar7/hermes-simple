@@ -23,26 +23,45 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
     'Chinese',
   ];
   String _selectedLanguage = 'English (US)';
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
+    print('SpeakerScreen - initState called');
+
     // Initialize the speech service
     Future.microtask(() {
+      print('SpeakerScreen - initializing speech provider');
       Provider.of<SpeechProvider>(context, listen: false).initialize();
+    });
+
+    // Create session if not already created - moved from build to initState with microtask
+    Future.microtask(() {
+      print('SpeakerScreen - checking if session needs to be created');
+      final sessionProvider = Provider.of<SessionProvider>(
+        context,
+        listen: false,
+      );
+      if (!sessionProvider.isSessionActive) {
+        print('SpeakerScreen - creating new session');
+        // For MVP, just use 'en-US' as default
+        sessionProvider.createSession('en-US');
+      }
+      setState(() {
+        _isInitialized = true;
+      });
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    print('SpeakerScreen - build method called, initialized: $_isInitialized');
     final sessionProvider = Provider.of<SessionProvider>(context);
     final speechProvider = Provider.of<SpeechProvider>(context);
 
-    // Create session if not already created
-    if (!sessionProvider.isSessionActive) {
-      // For MVP, just use 'en-US' as default
-      sessionProvider.createSession('en-US');
-    }
+    // Don't try to create a session during build anymore
+    // The session creation has been moved to initState
 
     return Scaffold(
       appBar: AppBar(
@@ -52,6 +71,7 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
           IconButton(
             icon: const Icon(Icons.exit_to_app),
             onPressed: () {
+              print('SpeakerScreen - exit button pressed');
               sessionProvider.endSession();
               Navigator.pop(context);
             },
@@ -80,7 +100,8 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        sessionProvider.currentSession?.sessionCode ?? 'ERROR',
+                        sessionProvider.currentSession?.sessionCode ??
+                            'Loading...',
                         style: const TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
@@ -119,6 +140,7 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
                       _selectedLanguage = value;
                     });
 
+                    print('SpeakerScreen - language changed to $value');
                     // Map language names to language codes (simplified for MVP)
                     final Map<String, String> languageCodes = {
                       'English (US)': 'en-US',
@@ -165,9 +187,18 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
               // Speech controls
               SpeechControlPanel(
                 isListening: speechProvider.isListening,
-                onStartListening: speechProvider.startListening,
-                onStopListening: speechProvider.stopListening,
-                onClearText: speechProvider.clearText,
+                onStartListening: () {
+                  print('SpeakerScreen - start listening pressed');
+                  speechProvider.startListening();
+                },
+                onStopListening: () {
+                  print('SpeakerScreen - stop listening pressed');
+                  speechProvider.stopListening();
+                },
+                onClearText: () {
+                  print('SpeakerScreen - clear text pressed');
+                  speechProvider.clearText();
+                },
               ),
             ],
           ),
