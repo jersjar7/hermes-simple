@@ -58,22 +58,25 @@ class SessionProvider with ChangeNotifier {
       return false;
     }
 
-    // Validate against Firebase to check if the session exists
-    final firebaseService =
-        FirebaseService(); // Create temporary instance just for validation
-    final sessionExists = await firebaseService.sessionExists(sessionCode);
+    // In MVP with Firebase, validate the session exists
+    try {
+      final firebaseService = FirebaseService();
+      final sessionExists = await firebaseService.sessionExists(sessionCode);
 
-    if (!sessionExists) {
-      print('SessionProvider - session does not exist');
+      if (!sessionExists) {
+        print('SessionProvider - session does not exist');
+        return false;
+      }
+
+      _joinedSessionCode = sessionCode;
+      _userRole = UserRole.audience;
+      notifyListeners();
+      print('SessionProvider - joined session successfully');
+      return true;
+    } catch (e) {
+      print('SessionProvider - error joining session: $e');
       return false;
     }
-
-    // Session exists, so we can join it
-    _joinedSessionCode = sessionCode;
-    _userRole = UserRole.audience;
-    notifyListeners();
-    print('SessionProvider - joined session successfully');
-    return true;
   }
 
   // End the current session
