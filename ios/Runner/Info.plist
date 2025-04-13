@@ -2,8 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Speech Recognition Permission -->
 	<key>NSMicrophoneUsageDescription</key>
-    <string>Hermes needs microphone access to record audio.</string>
+	<string>Hermes needs microphone access to record audio for speech recognition.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Hermes needs speech recognition to convert your spoken words into text.</string>
+	
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
