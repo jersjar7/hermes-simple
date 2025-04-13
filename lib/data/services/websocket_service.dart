@@ -7,10 +7,11 @@ import 'package:web_socket_channel/status.dart' as status;
 
 class WebSocketService {
   WebSocketChannel? _channel;
-  final String _baseUrl =
-      'wss://your-backend-url.com/ws'; // Replace with your WebSocket server
   bool _isConnected = false;
   String? _sessionId;
+
+  // In MVP, use a mock implementation that simulates WebSocket
+  final bool _useMockImplementation = true; // Set to true for development
 
   // Stream controllers for messages
   final _messageStreamController =
@@ -35,13 +36,27 @@ class WebSocketService {
     }
 
     try {
-      // For MVP, we can use a simple test WebSocket server or a local one
-      // For testing, you can use echo.websocket.org or a similar service
-      final Uri uri = Uri.parse('$_baseUrl/$sessionCode?role=$role');
+      if (_useMockImplementation) {
+        // For MVP, simulate a successful connection without actual WebSocket
+        print('WebSocketService - using mock implementation');
+        _isConnected = true;
+        _sessionId = sessionCode;
+
+        // Simulate connection success event
+        _messageStreamController.add({'type': 'status', 'data': 'connected'});
+
+        print('WebSocketService - mock connection established');
+        return true;
+      }
+
+      // Real implementation (for future use)
+      final Uri uri = Uri.parse(
+        'wss://echo.websocket.org',
+      ); // Temporary echo server for testing
       _channel = WebSocketChannel.connect(uri);
       _sessionId = sessionCode;
 
-      // For MVP, we'll simplify by considering connection immediate
+      // Set up connection
       _isConnected = true;
       print(
         'WebSocketService - connection established to session: $sessionCode',
@@ -86,7 +101,7 @@ class WebSocketService {
     print('WebSocketService - sendMessage called, type: $type');
     print('WebSocketService - message data: $data');
 
-    if (!_isConnected || _channel == null) {
+    if (!_isConnected) {
       print('WebSocketService - not connected, cannot send message');
       return false;
     }
@@ -98,6 +113,19 @@ class WebSocketService {
         'data': data,
         'timestamp': DateTime.now().toIso8601String(),
       };
+
+      if (_useMockImplementation) {
+        // For MVP, simulate message sending and echo it back
+        print('WebSocketService - mock sending message: $message');
+
+        // Simulate a delay
+        Future.delayed(const Duration(milliseconds: 300), () {
+          // Echo the message back to simulate receiving it
+          _messageStreamController.add(message);
+        });
+
+        return true;
+      }
 
       final jsonMessage = jsonEncode(message);
       print('WebSocketService - sending: $jsonMessage');
@@ -150,6 +178,14 @@ class WebSocketService {
   // Disconnect from the WebSocket server
   Future<void> disconnect() async {
     print('WebSocketService - disconnect called');
+
+    if (_useMockImplementation) {
+      _isConnected = false;
+      _sessionId = null;
+      _messageStreamController.add({'type': 'status', 'data': 'disconnected'});
+      print('WebSocketService - mock disconnected');
+      return;
+    }
 
     if (_channel != null) {
       _channel!.sink.close(status.normalClosure);

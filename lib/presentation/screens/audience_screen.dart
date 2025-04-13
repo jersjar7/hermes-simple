@@ -109,6 +109,88 @@ class _AudienceScreenState extends State<AudienceScreen> {
     }
   }
 
+  void onSessionCodeSubmit(BuildContext context, String code) async {
+    print('AudienceScreen - session code submitted: $code');
+
+    // Get providers
+    final sessionProvider = Provider.of<SessionProvider>(
+      context,
+      listen: false,
+    );
+    final translationProvider = Provider.of<TranslationProvider>(
+      context,
+      listen: false,
+    );
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // Join session
+      final success = sessionProvider.joinSession(code);
+
+      // Close loading dialog
+      if (context.mounted) Navigator.of(context).pop();
+
+      if (!success) {
+        print('AudienceScreen - invalid session code');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invalid session code. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else {
+        print('AudienceScreen - successfully joined session');
+
+        // Connect to WebSocket session
+        if (context.mounted) {
+          final connected = await translationProvider.connectToSession(
+            sessionCode: code,
+            role: 'audience',
+          );
+
+          if (!connected && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Connected to session, but WebSocket connection failed: ${translationProvider.error}',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          } else if (context.mounted) {
+            // Show success message
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Successfully joined translation session!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      // Close loading dialog and show error
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error joining session: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      print('AudienceScreen - error joining session: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     print(
@@ -171,46 +253,8 @@ class _AudienceScreenState extends State<AudienceScreen> {
                         ),
                         const SizedBox(height: 30),
                         SessionCodeInput(
-                          onSubmit: (code) async {
-                            print(
-                              'AudienceScreen - submitted session code: $code',
-                            );
-                            final success = sessionProvider.joinSession(code);
-
-                            if (!success) {
-                              print('AudienceScreen - invalid session code');
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Invalid session code. Please try again.',
-                                  ),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            } else {
-                              print(
-                                'AudienceScreen - successfully joined session',
-                              );
-
-                              // Connect to WebSocket session
-                              final connected = await translationProvider
-                                  .connectToSession(
-                                    sessionCode: code,
-                                    role: 'audience',
-                                  );
-
-                              if (!connected) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Connected to session, but WebSocket connection failed: ${translationProvider.error}',
-                                    ),
-                                    backgroundColor: Colors.orange,
-                                  ),
-                                );
-                              }
-                            }
-                          },
+                          onSubmit:
+                              (code) => onSessionCodeSubmit(context, code),
                         ),
                       ] else ...[
                         // Session active UI
