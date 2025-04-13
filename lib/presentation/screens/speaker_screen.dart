@@ -3,6 +3,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:hermes_app/presentation/widgets/error_message_widget.dart';
 import 'package:provider/provider.dart';
 import '../providers/session_provider.dart';
 import '../providers/speech_provider.dart';
@@ -43,28 +44,80 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
     super.initState();
     print('SpeakerScreen - initState called');
 
-    // Always start with loading state
-    setState(() {
-      _isLoading = true;
-    });
+    // Initialize with loading state
+    _isLoading = true;
+    _isInitialized = false;
 
-    // Use separate microtasks for initialization to prevent UI freezing
-    // First handle session creation
-    _initializeSession()
-        .then((_) {
-          // Then once session is done, initialize speech in a separate task
-          return _initializeSpeech();
-        })
-        .then((_) {
-          // Finally update UI state when all initialization is complete
-          if (mounted) {
-            setState(() {
-              _isInitialized = true;
-              _isLoading = false;
-            });
-            print('SpeakerScreen - completed all initialization');
-          }
+    // Use a single initialization flow with better state management
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    print('SpeakerScreen - starting initialization sequence');
+
+    try {
+      // Step 1: Request permissions first
+      final permissionsGranted = await _requestPermissions();
+      if (!permissionsGranted) {
+        print('SpeakerScreen - permissions denied, stopping initialization');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            // We won't mark as initialized because permissions are missing
+          });
+        }
+        return;
+      }
+
+      // Step 2: Initialize session (always succeeds in current implementation)
+      await _initializeSession();
+
+      // Step 3: Initialize speech recognition
+      final speechProvider = Provider.of<SpeechProvider>(
+        context,
+        listen: false,
+      );
+      final speechInitialized = await speechProvider.initialize();
+
+      if (mounted) {
+        setState(() {
+          _isInitialized = speechInitialized;
+          _isLoading = false;
         });
+
+        print(
+          'SpeakerScreen - initialization complete: ${_isInitialized ? 'success' : 'failed'}',
+        );
+
+        // Show success/failure message if needed
+        if (!_isInitialized) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Speech recognition initialization failed. '
+                'Some features may not work.',
+              ),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('SpeakerScreen - error during initialization: $e');
+      if (mounted) {
+        setState(() {
+          _isInitialized = false;
+          _isLoading = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error during initialization: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   // Initialize session in a separate method
@@ -90,84 +143,103 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
   Future<bool> _requestPermissions() async {
     print('SpeakerScreen - requesting permissions');
 
-    // Request microphone permission
-    PermissionStatus micStatus = await Permission.microphone.request();
-    if (micStatus != PermissionStatus.granted) {
-      print('SpeakerScreen - microphone permission denied');
-      return false;
+    // Check if permissions are already granted
+    bool micGranted = await Permission.microphone.isGranted;
+    bool speechGranted = true;
+    if (Platform.isIOS) {
+      speechGranted = await Permission.speech.isGranted;
+    }
+
+    if (micGranted && speechGranted) {
+      print('SpeakerScreen - permissions already granted');
+      return true;
+    }
+
+    // Request microphone permission if not granted
+    if (!micGranted) {
+      PermissionStatus micStatus = await Permission.microphone.request();
+      if (micStatus != PermissionStatus.granted) {
+        print('SpeakerScreen - microphone permission denied');
+
+        // Show persistent permission request explanation
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: const Text('Microphone Permission Required'),
+                content: const Text(
+                  'Hermes needs microphone access to convert your speech to text. '
+                  'Please grant this permission in your device settings.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      openAppSettings();
+                    },
+                    child: const Text('Open Settings'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).pop(); // Return to home screen
+                    },
+                    child: const Text('Cancel'),
+                  ),
+                ],
+              );
+            },
+          );
+        }
+        return false;
+      }
     }
 
     // On iOS, also need speech recognition permission
-    if (Platform.isIOS) {
+    if (Platform.isIOS && !speechGranted) {
       PermissionStatus speechStatus = await Permission.speech.request();
       if (speechStatus != PermissionStatus.granted) {
         print('SpeakerScreen - speech recognition permission denied');
+
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: const Text('Speech Recognition Permission Required'),
+                content: const Text(
+                  'Hermes needs speech recognition permission to convert your speech to text. '
+                  'Please grant this permission in your device settings.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      openAppSettings();
+                    },
+                    child: const Text('Open Settings'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).pop(); // Return to home screen
+                    },
+                    child: const Text('Cancel'),
+                  ),
+                ],
+              );
+            },
+          );
+        }
         return false;
       }
     }
 
     print('SpeakerScreen - all permissions granted');
     return true;
-  }
-
-  // Initialize speech in a separate method
-  Future<void> _initializeSpeech() async {
-    print('SpeakerScreen - initializing speech');
-
-    try {
-      // First check permissions
-      bool permissionsGranted = await _requestPermissions();
-      if (!permissionsGranted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Speech recognition requires microphone permission',
-              ),
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-        return;
-      }
-
-      final speechProvider = Provider.of<SpeechProvider>(
-        context,
-        listen: false,
-      );
-
-      // Initialize speech recognition and handle result
-      final initialized = await speechProvider.initialize();
-      if (!initialized) {
-        print('SpeakerScreen - speech initialization failed');
-
-        // Show a snackbar if initialization fails but allow the user to continue
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Speech recognition initialization failed. Some features may not work.',
-              ),
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-      } else {
-        print('SpeakerScreen - speech initialization successful');
-      }
-    } catch (e) {
-      print('SpeakerScreen - error initializing speech: $e');
-
-      // Show error but allow the user to continue
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error initializing speech: $e'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
   }
 
   @override
@@ -300,19 +372,28 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
                           ),
                         ),
 
-                      // Error display if any
-                      if (speechProvider.error.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          margin: const EdgeInsets.only(bottom: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade100,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Error: ${speechProvider.error}',
-                            style: TextStyle(color: Colors.red.shade800),
-                          ),
+                      // Error display with improved widget
+                      if (speechProvider.hasError)
+                        ErrorMessageWidget(
+                          errorMessage: speechProvider.errorMessage,
+                          onDismiss: () {
+                            speechProvider.clearError();
+                          },
+                          onRetry:
+                              speechProvider.isInitialized
+                                  ? null
+                                  : () {
+                                    setState(() {
+                                      _isLoading = true;
+                                    });
+                                    speechProvider.initialize().then((_) {
+                                      if (mounted) {
+                                        setState(() {
+                                          _isLoading = false;
+                                        });
+                                      }
+                                    });
+                                  },
                         ),
 
                       // Recognized text display
