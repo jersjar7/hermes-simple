@@ -229,20 +229,36 @@ class _SpeakerScreenState extends State<SpeakerScreen> {
           _languageCodes[_selectedAudienceLanguage] ?? 'es-ES',
         );
 
-        // Connect to WebSocket session
-        final sessionProvider = Provider.of<SessionProvider>(
-          context,
-          listen: false,
-        );
-        final sessionCode = sessionProvider.currentSession?.sessionCode;
-        if (sessionCode != null) {
+        // Connect to WebSocket session only if Firebase is available
+        if (translationProvider.isFirebaseAvailable) {
+          final sessionProvider = Provider.of<SessionProvider>(
+            context,
+            listen: false,
+          );
+          final sessionCode = sessionProvider.currentSession?.sessionCode;
+          if (sessionCode != null) {
+            print(
+              'SpeakerScreen - connecting to Firebase session: $sessionCode',
+            );
+            translationProvider.connectToSession(
+              sessionCode: sessionCode,
+              role: 'speaker',
+            );
+          }
+        } else {
           print(
-            'SpeakerScreen - connecting to WebSocket session: $sessionCode',
+            'SpeakerScreen - Firebase not available, skipping Firebase connection',
           );
-          translationProvider.connectToSession(
-            sessionCode: sessionCode,
-            role: 'speaker',
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'App running in offline mode. Real-time sharing with audience unavailable.',
+                ),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
         }
       }
     } catch (e) {

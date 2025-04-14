@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'presentation/providers/speech_provider.dart';
 import 'presentation/providers/session_provider.dart';
-import 'presentation/providers/translation_provider.dart'; // New import
+import 'presentation/providers/translation_provider.dart';
 import 'presentation/screens/home_screen.dart';
 
 // Error observer to log errors
@@ -28,14 +28,6 @@ void main() async {
   // Ensure Flutter is initialized
   WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    // Initialize Firebase
-    await Firebase.initializeApp();
-    print('Firebase initialized successfully');
-  } catch (e) {
-    print('Failed to initialize Firebase: $e');
-  }
-
   // Catch Flutter framework errors
   FlutterError.onError = (FlutterErrorDetails details) {
     print('Flutter error: ${details.exception}');
@@ -50,16 +42,28 @@ void main() async {
     return true;
   };
 
-  // Ensure Flutter is initialized
-  WidgetsFlutterBinding.ensureInitialized();
+  // Initialize Firebase with proper error handling and waiting
+  bool firebaseInitialized = false;
+  try {
+    // Wait for Firebase initialization to complete
+    await Firebase.initializeApp();
+    firebaseInitialized = true;
+    print('Firebase initialized successfully');
+  } catch (e) {
+    print('Failed to initialize Firebase: $e');
+    // Continue without Firebase, app will handle missing functionality
+  }
 
   print('App starting...');
 
-  runApp(const MyApp());
+  // Pass the Firebase initialization status to MyApp
+  runApp(MyApp(firebaseInitialized: firebaseInitialized));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool firebaseInitialized;
+
+  const MyApp({super.key, required this.firebaseInitialized});
 
   @override
   Widget build(BuildContext context) {
@@ -79,10 +83,13 @@ class MyApp extends StatelessWidget {
             return SessionProvider();
           },
         ),
+        // Pass Firebase initialization status to TranslationProvider
         ChangeNotifierProvider(
           create: (_) {
             print('Creating TranslationProvider');
-            return TranslationProvider();
+            return TranslationProvider(
+              firebaseInitialized: firebaseInitialized,
+            );
           },
         ),
       ],

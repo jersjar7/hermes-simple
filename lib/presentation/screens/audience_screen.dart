@@ -122,6 +122,11 @@ class _AudienceScreenState extends State<AudienceScreen> {
       listen: false,
     );
 
+    // Set Firebase availability in session provider
+    sessionProvider.setFirebaseAvailability(
+      translationProvider.isFirebaseAvailable,
+    );
+
     // Show loading indicator
     showDialog(
       context: context,
@@ -149,28 +154,43 @@ class _AudienceScreenState extends State<AudienceScreen> {
       } else {
         print('AudienceScreen - successfully joined session');
 
-        // Connect to WebSocket session
-        if (context.mounted) {
-          final connected = await translationProvider.connectToSession(
-            sessionCode: code,
-            role: 'audience',
-          );
-
-          if (!connected && context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Connected to session, but WebSocket connection failed: ${translationProvider.error}',
-                ),
-                backgroundColor: Colors.orange,
-              ),
+        // Only attempt WebSocket connection if Firebase is available
+        if (translationProvider.isFirebaseAvailable) {
+          // Connect to WebSocket session
+          if (context.mounted) {
+            final connected = await translationProvider.connectToSession(
+              sessionCode: code,
+              role: 'audience',
             );
-          } else if (context.mounted) {
-            // Show success message
+
+            if (!connected && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Connected to session, but WebSocket connection failed: ${translationProvider.error}',
+                  ),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            } else if (context.mounted) {
+              // Show success message
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Successfully joined translation session!'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
+          }
+        } else {
+          // Firebase unavailable notification
+          if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Successfully joined translation session!'),
-                backgroundColor: Colors.green,
+                content: Text(
+                  'Joined session in offline mode. Some features may be limited.',
+                ),
+                backgroundColor: Colors.blue,
               ),
             );
           }

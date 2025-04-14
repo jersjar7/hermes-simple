@@ -1,15 +1,18 @@
 // lib/presentation/providers/session_provider.dart
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes_app/data/services/firebase_service.dart';
 import '../../domain/models/session.dart';
 import '../../domain/models/user_role.dart';
 import '../../core/utils/session_code_generator.dart';
+import '../../data/services/firebase_service.dart';
 
 class SessionProvider with ChangeNotifier {
   Session? _currentSession;
   UserRole _userRole = UserRole.none;
   String? _joinedSessionCode;
+
+  // Get the TranslationProvider to check Firebase availability
+  bool _firebaseAvailable = false;
 
   Session? get currentSession => _currentSession;
   UserRole get userRole => _userRole;
@@ -23,6 +26,11 @@ class SessionProvider with ChangeNotifier {
     print('SessionProvider - setUserRole: $role');
     _userRole = role;
     notifyListeners();
+  }
+
+  // Check Firebase availability from TranslationProvider
+  void setFirebaseAvailability(bool available) {
+    _firebaseAvailable = available;
   }
 
   // Create a new session for speaker
@@ -56,6 +64,17 @@ class SessionProvider with ChangeNotifier {
     if (!SessionCodeGenerator.isValidSessionCode(sessionCode)) {
       print('SessionProvider - invalid session code format');
       return false;
+    }
+
+    // If Firebase isn't available, just accept the code in MVP
+    if (!_firebaseAvailable) {
+      print(
+        'SessionProvider - Firebase not available, accepting code without validation',
+      );
+      _joinedSessionCode = sessionCode;
+      _userRole = UserRole.audience;
+      notifyListeners();
+      return true;
     }
 
     // In MVP with Firebase, validate the session exists

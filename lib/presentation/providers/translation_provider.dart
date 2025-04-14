@@ -8,7 +8,10 @@ import '../../data/services/firebase_service.dart';
 class TranslationProvider with ChangeNotifier {
   final TranslationService _translationService = TranslationService();
   final TTSService _ttsService = TTSService();
-  final FirebaseService _firebaseService = FirebaseService();
+
+  // Lazy initialization of FirebaseService
+  FirebaseService? _firebaseService;
+  final bool _firebaseAvailable;
 
   bool _isInitialized = false;
   bool _isTranslating = false;
@@ -21,11 +24,20 @@ class TranslationProvider with ChangeNotifier {
   String _lastOriginalText = '';
   String _lastTranslatedText = '';
 
+  // Constructor now accepts Firebase initialization status
+  TranslationProvider({bool firebaseInitialized = false})
+    : _firebaseAvailable = firebaseInitialized {
+    print(
+      'TranslationProvider - created with Firebase available: $_firebaseAvailable',
+    );
+  }
+
   // Getters
   bool get isInitialized => _isInitialized;
   bool get isTranslating => _isTranslating;
   bool get isSpeaking => _isSpeaking;
   bool get isConnected => _isConnected;
+  bool get isFirebaseAvailable => _firebaseAvailable;
   String get error => _error;
   String get speakerLanguage => _speakerLanguage;
   String get audienceLanguage => _audienceLanguage;
@@ -74,10 +86,25 @@ class TranslationProvider with ChangeNotifier {
       allInitialized = false;
     }
 
-    // Set up WebSocket message listener
-    _firebaseService.messageStream.listen((message) {
-      _handleWebSocketMessage(message);
-    });
+    // Initialize Firebase only if available
+    if (_firebaseAvailable) {
+      try {
+        _firebaseService = FirebaseService();
+        // Set up WebSocket message listener
+        _firebaseService!.messageStream.listen((message) {
+          _handleWebSocketMessage(message);
+        });
+      } catch (e) {
+        print('TranslationProvider - Firebase service error: $e');
+        _error += 'Firebase service error: $e. ';
+        _firebaseService = null;
+      }
+    } else {
+      print(
+        'TranslationProvider - Firebase not available, skipping initialization',
+      );
+      _error += 'Firebase not available, some features will be limited. ';
+    }
 
     _isInitialized = allInitialized;
     notifyListeners();
@@ -115,8 +142,17 @@ class TranslationProvider with ChangeNotifier {
 
     _error = '';
 
+    // Check if Firebase is available
+    if (_firebaseService == null || !_firebaseAvailable) {
+      _error = 'Firebase is not available, cannot connect to session';
+      _isConnected = false;
+      notifyListeners();
+      print('TranslationProvider - Firebase not available, cannot connect');
+      return false;
+    }
+
     try {
-      final connected = await _firebaseService.connect(
+      final connected = await _firebaseService!.connect(
         sessionCode: sessionCode,
         role: role,
       );
@@ -145,7 +181,9 @@ class TranslationProvider with ChangeNotifier {
   Future<void> disconnect() async {
     print('TranslationProvider - disconnecting');
 
-    await _firebaseService.disconnect();
+    if (_firebaseService != null) {
+      await _firebaseService!.disconnect();
+    }
     _isConnected = false;
     notifyListeners();
   }
@@ -174,9 +212,9 @@ class TranslationProvider with ChangeNotifier {
       _lastTranslatedText = translatedText;
       _isTranslating = false;
 
-      // If connected to session, send translation to WebSocket
-      if (_isConnected) {
-        await _firebaseService.sendTranslation(
+      // If connected to session and Firebase is available, send translation to WebSocket
+      if (_isConnected && _firebaseService != null) {
+        await _firebaseService!.sendTranslation(
           originalText: text,
           translatedText: translatedText,
           fromLanguage: _speakerLanguage,
@@ -314,7 +352,7 @@ class TranslationProvider with ChangeNotifier {
   void dispose() {
     print('TranslationProvider - dispose called');
     _ttsService.dispose();
-    _firebaseService.dispose();
+    _firebaseService?.dispose();
     super.dispose();
   }
 }

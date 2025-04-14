@@ -1,13 +1,13 @@
 // lib/data/services/firebase_service.dart
 
 import 'dart:async';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 class FirebaseService {
-  final DatabaseReference _sessionsRef = FirebaseDatabase.instance.ref(
-    'sessions',
-  );
+  DatabaseReference? _sessionsRef;
   StreamSubscription? _sessionSubscription;
+  bool _isInitialized = false;
   bool _isConnected = false;
   String? _sessionId;
 
@@ -19,6 +19,49 @@ class FirebaseService {
   Stream<Map<String, dynamic>> get messageStream =>
       _messageStreamController.stream;
 
+  // Constructor with safe initialization
+  FirebaseService() {
+    _initializeFirebase();
+  }
+
+  // Safe initialization method
+  Future<void> _initializeFirebase() async {
+    try {
+      // Check if Firebase is already initialized
+      if (Firebase.apps.isNotEmpty) {
+        _sessionsRef = FirebaseDatabase.instance.ref('sessions');
+        _isInitialized = true;
+        print('FirebaseService - initialized with existing Firebase app');
+      } else {
+        print(
+          'FirebaseService - Firebase not initialized, features will be limited',
+        );
+        // Don't try to access Firebase services if not initialized
+        _isInitialized = false;
+
+        // Try to initialize Firebase as a fallback
+        try {
+          await Firebase.initializeApp();
+          _sessionsRef = FirebaseDatabase.instance.ref('sessions');
+          _isInitialized = true;
+          print('FirebaseService - successfully initialized Firebase');
+        } catch (initError) {
+          print('FirebaseService - fallback initialization failed: $initError');
+        }
+      }
+    } catch (e) {
+      print('FirebaseService - initialization error: $e');
+      _isInitialized = false;
+      _messageStreamController.add({
+        'type': 'error',
+        'data': 'Firebase initialization error: $e',
+      });
+    }
+  }
+
+  // Check if Firebase is initialized
+  bool get isInitialized => _isInitialized;
+
   // Connect to Firebase session
   Future<bool> connect({
     required String sessionCode,
@@ -28,6 +71,16 @@ class FirebaseService {
       'FirebaseService - connect called for session: $sessionCode, role: $role',
     );
 
+    // Check if Firebase is initialized
+    if (!_isInitialized || _sessionsRef == null) {
+      print('FirebaseService - not initialized, cannot connect');
+      _messageStreamController.add({
+        'type': 'error',
+        'data': 'Firebase not initialized',
+      });
+      return false;
+    }
+
     if (_isConnected) {
       print('FirebaseService - already connected, disconnecting first');
       await disconnect();
@@ -35,11 +88,11 @@ class FirebaseService {
 
     try {
       // Check if session exists
-      final snapshot = await _sessionsRef.child(sessionCode).get();
+      final snapshot = await _sessionsRef!.child(sessionCode).get();
       if (!snapshot.exists) {
         // For speaker role, create the session
         if (role == 'speaker') {
-          await _sessionsRef.child(sessionCode).set({
+          await _sessionsRef!.child(sessionCode).set({
             'created': ServerValue.timestamp,
             'active': true,
             'role': role,
@@ -56,7 +109,7 @@ class FirebaseService {
       _isConnected = true;
 
       // Listen for messages in this session
-      _sessionSubscription = _sessionsRef
+      _sessionSubscription = _sessionsRef!
           .child(sessionCode)
           .child('messages')
           .onChildAdded
@@ -87,8 +140,14 @@ class FirebaseService {
 
   // Check if session exists (for audience validation)
   Future<bool> sessionExists(String sessionCode) async {
+    // Check if Firebase is initialized
+    if (!_isInitialized || _sessionsRef == null) {
+      print('FirebaseService - not initialized, cannot check session');
+      return false;
+    }
+
     try {
-      final snapshot = await _sessionsRef.child(sessionCode).get();
+      final snapshot = await _sessionsRef!.child(sessionCode).get();
       return snapshot.exists;
     } catch (e) {
       print('FirebaseService - error checking session: $e');
@@ -103,6 +162,12 @@ class FirebaseService {
   }) async {
     print('FirebaseService - sendMessage called, type: $type');
 
+    // Check if Firebase is initialized
+    if (!_isInitialized || _sessionsRef == null) {
+      print('FirebaseService - not initialized, cannot send message');
+      return false;
+    }
+
     if (!_isConnected || _sessionId == null) {
       print('FirebaseService - not connected, cannot send message');
       return false;
@@ -116,7 +181,7 @@ class FirebaseService {
         'timestamp': ServerValue.timestamp,
       };
 
-      await _sessionsRef
+      await _sessionsRef!
           .child(_sessionId!)
           .child('messages')
           .push()
